@@ -1,0 +1,10 @@
+{
+  "asset_id": "A007",
+  "hour": 300,
+  "planner": "rules",
+  "status": "normal",
+  "diagnosis": "Operating normally. Vibration 2.16 mm/s vs. baseline 2.23 (-3.2%), never above 3 sigma in the current window; bearing temperature change -0.1 °C. 0 failures in the last 12 months.",
+  "confidence": "High for the current state.",
+  "action": "No work order. Continue routine monitoring.",
+  "work_order": null
+}

@@ -1,0 +1,16 @@
+{
+  "asset_id": "A002",
+  "hour": 737,
+  "planner": "rules",
+  "status": "high risk",
+  "diagnosis": "Probable bearing wear (manual §7.2). Vibration 3.68 mm/s (+105.9% vs. baseline 1.79), 48 h above 3 sigma, bearing temperature 55.7 -> 64.9 °C, estimated remaining life about 38 h.",
+  "confidence": "Moderate to high. Last bearing change 21 months ago, last oil analysis 6 months ago (normal).",
+  "action": "Opened WO-1001 (high priority): Inspect the bearing and take an oil sample within 72 h; monitor vibration and temperature continuously; stop the machine if vibration reaches 7.0 mm/s.",
+  "work_order": {
+    "id": "WO-1001",
+    "asset_id": "A002",
+    "priority": "high",
+    "actions": "Inspect the bearing and take an oil sample within 72 h; monitor vibration and temperature continuously; stop the machine if vibration reaches 7.0 mm/s.",
+    "evidence": "Vibration 3.68 mm/s (+105.9% vs. baseline 1.79), 48 h above 3 sigma, bearing temperature 55.7 -> 64.9 °C, estimated remaining life about 38 h."
+  }
+}

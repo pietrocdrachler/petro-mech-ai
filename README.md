@@ -28,54 +28,55 @@ from misalignment), and an **action**, which can be "no work order".
 ```bash
 pip install -r requirements.txt
 python -m ml.train               # simulate 90 assets, train, evaluate -> models/, metrics.json
-python -m agent.run --examples   # run the agent on the 3 examples -> examples/
 python -m agent.run --asset A002 --hour 737
 pytest -q
 ```
 
-Everything runs offline in under a minute, with no API keys.
+Without any keys this runs offline in under a minute with the rules planner.
+
+**With Meterless Nightshift** (the model chooses the tools and writes the explanation):
+
+```bash
+export METERLESS_BASE_URL=http://127.0.0.1:8088/v1
+export METERLESS_API_KEY=<Nightshift runtime auth token>
+export METERLESS_MODEL=nvidia/nemotron-3.5-lightning-30b-a3b
+python -m agent.run --examples   # regenerates examples/ with live model calls and receipts
+```
 
 ## Three examples: input → output
 
-All three are test assets the models never saw in training. Full outputs and step-by-step
-traces are in [`examples/`](examples/).
+All three are test assets the models never saw in training. Each folder in
+[`examples/`](examples/) has `input.json`, the agent's answer (`output.md`, `output.json`) and
+the step-by-step `trace.jsonl`. The first lines of each `output.md` say which planner produced it.
 
-**1. Late bearing wear** · input `{"asset_id": "A002", "hour": 737}`
-- Diagnosis: probable bearing wear (manual §7.2). Vibration 3.68 mm/s (+106% vs. baseline 1.79),
-  48 h above 3σ, bearing temperature 55.7 → 64.9 °C, estimated remaining life about 38 h.
-- Confidence: moderate to high; no spectrum, lubrication or load data.
-- Action: **opened WO-1001, high priority**: inspect bearing and oil sample within 72 h,
-  stop if vibration reaches 7 mm/s.
-
-**2. Early deviation** · input `{"asset_id": "A004", "hour": 767}`
-- Diagnosis: probable bearing wear. Vibration 1.85 mm/s (+22%), 6 h above 3σ, bearing
-  temperature +2.0 °C, estimated remaining life about 155 h.
-- Confidence: moderate.
-- Action: **opened WO-1002, medium priority**: inspect within 7 days, check alignment.
-
-**3. Healthy** · input `{"asset_id": "A007", "hour": 300}`
-- Diagnosis: operating normally. Vibration 2.16 mm/s vs. baseline 2.23 (−3%), never above 3σ,
-  no failures in 12 months.
-- Confidence: high for the current state.
-- Action: **no work order**, routine monitoring.
+| Example | Input | What the tools return | Expected decision |
+|---|---|---|---|
+| Late bearing wear | `{"asset_id": "A002", "hour": 737}` | vibration 3.68 mm/s (+106% vs. 1.79), 48 h above 3σ, bearing 55.7 → 64.9 °C, RUL ≈ 38 h | high-priority work order |
+| Early deviation | `{"asset_id": "A004", "hour": 767}` | vibration 1.85 mm/s (+22%), 6 h above 3σ, bearing +2.0 °C, RUL ≈ 155 h | medium-priority work order |
+| Healthy | `{"asset_id": "A007", "hour": 300}` | vibration 2.16 mm/s (−3%), never above 3σ, no failures in 12 months | no work order |
 
 ## Agent traces
 
 Each run writes a `trace.jsonl` with one line per step: the input, every tool call with its
-arguments, result and timing, the reasoning and decision rule, every model call (when a model
-is used) and the final output. Example: [`examples/early_deviation/trace.jsonl`](examples/early_deviation/trace.jsonl).
+arguments, result and timing, the reasoning and decision rule, every model call with the
+model Nightshift routed to and its Meterless compute receipt id, and the final output. Example: [`examples/early_deviation/trace.jsonl`](examples/early_deviation/trace.jsonl).
 
-## Planner and Meterless Nightshift
+## Meterless Nightshift and NVIDIA Nemotron
 
-- **Default: rules planner.** A transparent rule-based planner, so the repository runs anywhere.
-  Every output states `planner: rules`.
-- **Meterless Nightshift.** If `METERLESS_BASE_URL` is set (for example
-  `http://127.0.0.1:8088/v1`), the agent sends each step to Nightshift's OpenAI-compatible
-  `chat/completions` endpoint with tool calling, lets the model choose the tools, and logs each
-  model call and the response metadata in the trace. Optional: `METERLESS_API_KEY`,
-  `METERLESS_MODEL`. If the call fails, the agent logs the error and falls back to the rules
-  planner. **This client is implemented but was not tested against a live Nightshift instance
-  before the deadline.**
+The agent's model calls go through **Meterless Nightshift** running on a MacBook Air (M2),
+using its OpenAI-compatible endpoint at `http://127.0.0.1:8088/v1`. Nightshift holds the
+NVIDIA key and routes the calls to **NVIDIA Nemotron** (`nemotron-3.5-lightning-30b-a3b`), and
+returns a signed compute receipt for each call, which the agent stores in the trace.
+
+- **`model-chose-tools` mode:** the model gets the four tool definitions and decides which to
+  call, in what order, and whether to open a work order.
+- **`evidence-first` mode:** if the routed model answers without using tools, the agent runs
+  the tools itself, takes the work-order decision with the rules planner, and asks the model
+  only to write the explanation from that evidence. The switch is logged in the trace.
+- **`rules` fallback:** with no `METERLESS_BASE_URL`, or if a call fails, the agent logs the
+  error and uses the rule-based planner, so the repository always runs.
+
+Every output says which planner and mode produced it.
 
 ## The web demo
 
@@ -120,15 +121,15 @@ and the alert threshold will need recalibration.
 - One failure mode (bearing wear); history and manual are synthetic stand-ins.
 - No real data, no vibration spectrum, no validation with maintenance experts.
 - Alert threshold calibrated only on simulated healthy data.
-- Nightshift client not tested live; Zetaris not integrated yet.
+- The model sometimes describes a work order instead of opening it; the trace shows what it actually called.
+- Zetaris not integrated yet.
 
 ## Roadmap
 
-1. Run the agent live on Meterless Nightshift.
-2. Zetaris as the data layer: federated SQL over historian, maintenance records and manuals.
-3. FastAPI, PostgreSQL and Docker Compose.
-4. More failure modes and public degradation datasets.
-5. Pilot with real plant data.
+1. Zetaris as the data layer: federated SQL over historian, maintenance records and manuals.
+2. FastAPI, PostgreSQL and Docker Compose.
+3. More failure modes and public degradation datasets.
+4. Pilot with real plant data.
 
 ## License
 

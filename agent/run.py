@@ -142,46 +142,93 @@ def plan_with_rules(fleet, trace, asset_id, at_hour) -> dict:
 # ------------------------------------------------------------ nightshift planner
 SYSTEM_PROMPT = (
     "You are a maintenance engineer's assistant for pumps and compressors. Investigate the asset "
-    "with the tools, deciding which ones to call. Open a work order only when the evidence justifies "
-    "it. Answer in three parts: 1) probable diagnosis with the numbers, 2) confidence and what you "
-    "cannot know from the data, 3) action. All data is synthetic."
+    "with the tools, deciding which ones to call. Check the manual for the limits before deciding. "
+    "Open a work order only when the evidence justifies it, and if you recommend one you MUST open "
+    "it by calling create_work_order before your final answer; never just describe it. If the asset "
+    "is normal, open none and say why. Final answer in three short parts: 1) probable diagnosis with "
+    "the numbers, 2) confidence and what you cannot know from the data, 3) action taken. "
+    "All data is synthetic."
 )
 
 
-def plan_with_nightshift(fleet, trace, asset_id, at_hour) -> dict:
+def _chat(trace, messages, with_tools: bool) -> dict:
+    """One call to Meterless Nightshift's OpenAI-compatible endpoint; logs the receipt."""
     base = os.environ["METERLESS_BASE_URL"].rstrip("/")
     key = os.environ.get("METERLESS_API_KEY", "")
-    model = os.environ.get("METERLESS_MODEL", "default")
+    model = os.environ.get("METERLESS_MODEL", "meterless/auto")
+    body = {"model": model, "messages": messages}
+    if with_tools:
+        body["tools"] = tools.TOOL_SCHEMAS
+    req = urllib.request.Request(
+        f"{base}/chat/completions", data=json.dumps(body).encode(), method="POST",
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}",
+                 "meterless-app": "petro-mech-ai", "meterless-scope": "user"})
+    t0 = time.perf_counter()
+    with urllib.request.urlopen(req, timeout=180) as r:
+        resp = json.loads(r.read())
+    meta = resp.get("meterless") or {}
+    trace.log("model_call", provider="meterless-nightshift", requested_model=model,
+              routed_model=meta.get("routed_model") or resp.get("model"),
+              receipt_id=meta.get("receipt_id"), with_tools=with_tools,
+              ms=round(1000 * (time.perf_counter() - t0)), usage=resp.get("usage"),
+              receipt={k: v for k, v in resp.items() if k != "choices"})
+    return resp["choices"][0]["message"]
+
+
+def _status(wo) -> str:
+    return f"{wo['priority']} risk, work order opened" if wo else "no work order opened"
+
+
+def plan_with_nightshift(fleet, trace, asset_id, at_hour) -> dict:
+    """Model-driven: the model chooses the tools. If the routed model does not
+    use tool calling, switch to evidence-first: the tools run in a fixed order
+    (rules planner, which also makes the work-order decision) and the model
+    writes the explanation from that evidence."""
     messages = [{"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": f"Investigate asset {asset_id}."}]
     wo = None
-    for _ in range(8):
-        body = {"model": model, "messages": messages, "tools": tools.TOOL_SCHEMAS}
-        req = urllib.request.Request(
-            f"{base}/chat/completions", data=json.dumps(body).encode(), method="POST",
-            headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}",
-                     "meterless-app": "petro-mech-ai", "meterless-scope": "user"})
-        t0 = time.perf_counter()
-        with urllib.request.urlopen(req, timeout=120) as r:
-            resp = json.loads(r.read())
-        msg = resp["choices"][0]["message"]
-        trace.log("model_call", provider="meterless-nightshift", model=resp.get("model", model),
-                  ms=round(1000 * (time.perf_counter() - t0)), usage=resp.get("usage"),
-                  receipt={k: v for k, v in resp.items() if k not in ("choices",)})
-        messages.append(msg)
+    for turn in range(8):
+        msg = _chat(trace, messages, with_tools=True)
         calls = msg.get("tool_calls") or []
         if not calls:
-            return {"status": "see report", "diagnosis": msg.get("content", ""),
-                    "confidence": "", "action": "", "work_order": wo}
+            if turn == 0:
+                trace.log("planner_switch", reason="model returned no tool calls",
+                          mode="evidence-first")
+                return explain_with_nightshift(fleet, trace, asset_id, at_hour)
+            return {"mode": "model-chose-tools", "status": _status(wo),
+                    "report": msg.get("content") or "", "work_order": wo}
+        messages.append(msg)
         for c in calls:
-            args = json.loads(c["function"]["arguments"] or "{}")
+            args = c["function"].get("arguments") or "{}"
+            args = json.loads(args) if isinstance(args, str) else args
             out = call_tool(fleet, trace, c["function"]["name"], args, at_hour)
             if c["function"]["name"] == "create_work_order":
                 wo = out
-            messages.append({"role": "tool", "tool_call_id": c["id"],
+            messages.append({"role": "tool", "tool_call_id": c.get("id", ""),
                              "content": json.dumps(out, ensure_ascii=False)})
-    return {"status": "stopped", "diagnosis": "Too many steps.", "confidence": "", "action": "",
+    return {"mode": "model-chose-tools", "status": "stopped", "report": "Too many steps.",
             "work_order": wo}
+
+
+def explain_with_nightshift(fleet, trace, asset_id, at_hour) -> dict:
+    decided = plan_with_rules(fleet, trace, asset_id, at_hour)
+    evidence = [s for s in _read_trace(trace) if s["kind"] in ("tool_call", "decision", "reasoning")]
+    prompt = (
+        f"Asset {asset_id}. Below is the evidence the agent's tools returned and the decision "
+        "already taken. Write the explanation for a maintenance engineer in three short parts: "
+        "1) Diagnosis, citing the numbers; 2) Confidence, and what cannot be known from this data "
+        "(no frequency spectrum, no lubrication or load data, synthetic readings); 3) Action, "
+        "consistent with the decision. Do not invent numbers.\n\n"
+        + json.dumps(evidence, ensure_ascii=False))
+    msg = _chat(trace, [{"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user", "content": prompt}], with_tools=False)
+    return {"mode": "evidence-first", "status": decided["status"],
+            "report": msg.get("content") or "", "work_order": decided["work_order"],
+            "rules_summary": {k: decided[k] for k in ("diagnosis", "confidence", "action")}}
+
+
+def _read_trace(trace) -> list:
+    return [json.loads(line) for line in trace.path.read_text().splitlines() if line.strip()]
 
 
 def investigate(fleet, asset_id, at_hour, trace_path: Path) -> dict:
@@ -192,7 +239,8 @@ def investigate(fleet, asset_id, at_hour, trace_path: Path) -> dict:
         try:
             result = plan_with_nightshift(fleet, trace, asset_id, at_hour)
             planner = "meterless-nightshift"
-        except (urllib.error.URLError, KeyError, TimeoutError, json.JSONDecodeError) as e:
+        except (urllib.error.URLError, KeyError, TimeoutError, json.JSONDecodeError,
+                TypeError, IndexError) as e:
             trace.log("error", where="nightshift", error=str(e), fallback="rules")
             result = plan_with_rules(fleet, trace, asset_id, at_hour)
     else:
@@ -230,6 +278,14 @@ def pick_examples(fleet: tools.Fleet) -> list[dict]:
 
 
 def to_markdown(r: dict) -> str:
+    if r.get("report") is not None:
+        wo = r.get("work_order")
+        lines = [f"# {r['asset_id']} at hour {r['hour']}: {r['status']}", "",
+                 f"Planner: `{r['planner']}` ({r.get('mode')})", "",
+                 r["report"].strip(), "",
+                 f"Work order: {wo['id'] + ' (' + wo['priority'] + ' priority)' if wo else 'none opened'}",
+                 "", "Every model call and its Meterless receipt is in trace.jsonl.", ""]
+        return "\n".join(lines)
     lines = [f"# {r['asset_id']} at hour {r['hour']}: {r['status']}", "",
              f"Planner: `{r['planner']}`", "",
              f"**1) Diagnosis.** {r['diagnosis']}", "",

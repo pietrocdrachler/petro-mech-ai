@@ -1,10 +1,9 @@
 {
   "asset_id": "A007",
   "hour": 300,
-  "planner": "rules",
-  "status": "normal",
-  "diagnosis": "Operating normally. Vibration 2.16 mm/s vs. baseline 2.23 (-3.2%), never above 3 sigma in the current window; bearing temperature change -0.1 °C. 0 failures in the last 12 months.",
-  "confidence": "High for the current state.",
-  "action": "No work order. Continue routine monitoring.",
+  "planner": "meterless-nightshift",
+  "mode": "model-chose-tools",
+  "status": "no work order opened",
+  "report": "**1) Probable diagnosis with the numbers**  \n- Vibration: 2.16 mm/s (baseline 2.23 mm/s, ‑3.2 % change) – well below the alarm 4.5 mm/s and trip 7.0 mm/s limits.  \n- Bearing temperature: 67.1 °C (baseline 67.2 °C, ‑0.1 °C change) – stable, within normal operating range.  \n- Anomaly score: 0.418 (threshold 0.585) – no active alert.  \n- Hours above 3‑σ: 0 – no sustained vibration rise.  \n- RUL estimate: 278 h.  \n- History: last bearing change 7 mo, last oil analysis 4 mo (normal), last alignment 9 mo, zero failures in 12 mo.  \n\n**2) Confidence and data limits**  \n- High confidence the asset is currently normal; all measured parameters are inside the manual‑defined limits and no 3‑σ excursions are recorded.  \n- Cannot predict future degradation from this single snapshot; incipient wear that has not yet crossed the 3‑σ or temperature‑rise thresholds would remain invisible.  \n\n**3) Action taken**  \n- No work order opened. The asset operates within normal parameters per sensor readings and manual limits; maintenance can continue on the scheduled cycle.",
   "work_order": null
 }

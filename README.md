@@ -49,11 +49,17 @@ All three are test assets the models never saw in training. Each folder in
 [`examples/`](examples/) has `input.json`, the agent's answer (`output.md`, `output.json`) and
 the step-by-step `trace.jsonl`. The first lines of each `output.md` say which planner produced it.
 
-| Example | Input | What the tools return | Expected decision |
-|---|---|---|---|
-| Late bearing wear | `{"asset_id": "A002", "hour": 737}` | vibration 3.68 mm/s (+106% vs. 1.79), 48 h above 3σ, bearing 55.7 → 64.9 °C, RUL ≈ 38 h | high-priority work order |
-| Early deviation | `{"asset_id": "A004", "hour": 767}` | vibration 1.85 mm/s (+22%), 6 h above 3σ, bearing +2.0 °C, RUL ≈ 155 h | medium-priority work order |
-| Healthy | `{"asset_id": "A007", "hour": 300}` | vibration 2.16 mm/s (−3%), never above 3σ, no failures in 12 months | no work order |
+| Example | Input | What the tools return | Nemotron's decision (live run) | Rules planner |
+|---|---|---|---|---|
+| Late bearing wear | `{"asset_id": "A002", "hour": 737}` | vibration 3.68 mm/s (+106% vs. 1.79), 48 h above 3σ, bearing 55.7 → 64.9 °C, RUL ≈ 38 h | **medium-priority** work order | high priority |
+| Early deviation | `{"asset_id": "A004", "hour": 767}` | vibration 1.85 mm/s (+22%), 6 h above 3σ, bearing +2.0 °C, RUL ≈ 155 h | **medium-priority** work order | medium priority |
+| Healthy | `{"asset_id": "A007", "hour": 300}` | vibration 2.16 mm/s (−3%), never above 3σ, no failures in 12 months | **no work order** | no work order |
+
+All three were generated live through Meterless Nightshift with NVIDIA Nemotron 3.5 Lightning,
+in `model-chose-tools` mode: the model picked the tools and opened (or did not open) the work
+orders itself. On A002 it chose medium priority where the rules planner chooses high, because
+the estimated remaining life is under 100 h. Both are visible in the output and the trace;
+making the model follow the plant's escalation policy is the next step.
 
 ## Agent traces
 
@@ -121,7 +127,7 @@ and the alert threshold will need recalibration.
 - One failure mode (bearing wear); history and manual are synthetic stand-ins.
 - No real data, no vibration spectrum, no validation with maintenance experts.
 - Alert threshold calibrated only on simulated healthy data.
-- The model sometimes describes a work order instead of opening it; the trace shows what it actually called.
+- The model's priority can differ from the plant's escalation rule (A002); the trace shows each decision.
 - Zetaris not integrated yet.
 
 ## Roadmap

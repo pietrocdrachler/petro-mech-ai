@@ -1,12 +1,13 @@
-# A002 at hour 737: high risk
+# A002 at hour 737: medium risk, work order opened
 
-Planner: `rules`
+Planner: `meterless-nightshift` (model-chose-tools)
 
-**1) Diagnosis.** Probable bearing wear (manual §7.2). Vibration 3.68 mm/s (+105.9% vs. baseline 1.79), 48 h above 3 sigma, bearing temperature 55.7 -> 64.9 °C, estimated remaining life about 38 h.
+1) **Probable diagnosis** – Asset A002 shows a vibration of 3.68 mm/s (105.9 % above the 1.79 mm/s baseline) and has exceeded the 3‑sigma threshold for 48 h. Bearing temperature is 64.9 °C, 9.2 °C above the 55.7 °C baseline. The anomaly score (0.729) exceeds the 0.585 threshold and the ML‑estimated remaining useful life is 38 h. Manual section 7.2 flags sustained vibration rise above 3 sigma with rising bearing temperature as bearing‑wear indicators.
 
-**2) Confidence.** Moderate to high. Last bearing change 21 months ago, last oil analysis 6 months ago (normal). What the agent cannot know:
-- No frequency spectrum, so bearing wear cannot be fully separated from misalignment.
-- No lubrication or load data.
-- All readings are synthetic.
+2) **Confidence & limits** – High confidence that the machine is trending toward a bearing‑wear fault given the vibration/temperature rise and anomaly score. Cannot definitively confirm bearing damage without a physical inspection and oil analysis; other causes (misalignment, looseness) are possible.
 
-**3) Action.** Opened WO-1001 (high priority): Inspect the bearing and take an oil sample within 72 h; monitor vibration and temperature continuously; stop the machine if vibration reaches 7.0 mm/s.
+3) **Action taken** – Opened work order **WO‑1001** (medium priority) to inspect the bearing and take an oil sample per manual section 7.2, with continued monitoring of vibration and temperature.
+
+Work order: WO-1001 (medium priority)
+
+Every model call and its Meterless receipt is in trace.jsonl.

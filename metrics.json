@@ -1,0 +1,9 @@
+{
+  "test_assets": 18,
+  "detected_before_failure": 18,
+  "median_lead_time_h": 161.0,
+  "rul_mae_last_100h": 12.1,
+  "false_alarms_per_1000_healthy_h": 0.0,
+  "train_assets": 72,
+  "seed": 42
+}
